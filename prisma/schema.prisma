@@ -1,0 +1,240 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  STUDENT
+  TEACHER
+  ADMIN
+}
+
+enum ReadingStatus {
+  NOT_STARTED
+  READING
+  COMPLETED
+  PAUSED
+}
+
+model User {
+  id            String    @id @default(uuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  password      String?   // For credentials authentication
+  username      String?   @unique
+  firstName     String?
+  lastName      String?
+  role          UserRole  @default(STUDENT)
+  avatar        String?
+  bio           String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Auth.js relations
+  accounts      Account[]
+  sessions      Session[]
+
+  // Reading related
+  readingProgress ReadingProgress[]
+  summaries       Summary[]
+  achievements    UserAchievement[]
+  followers       Follow[] @relation("UserFollowers")
+  following       Follow[] @relation("UserFollowing")
+
+  // Social features
+  comments        Comment[]
+  likes           Like[]
+  
+  // Gamification
+  points          Int     @default(0)
+  level           Int     @default(1)
+  
+  @@map("users")
+}
+
+// Auth.js required models
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+model Book {
+  id          String   @id @default(uuid())
+  title       String
+  author      String
+  description String?
+  coverImage  String?
+  isbn        String?  @unique
+  category    String
+  pages       Int?
+  language    String   @default("en")
+  publishedAt DateTime?
+  difficulty  String?  // beginner, intermediate, advanced
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  readingProgress ReadingProgress[]
+  summaries       Summary[]
+  comments        Comment[]
+  likes           Like[]
+
+  @@map("books")
+}
+
+model ReadingProgress {
+  id            String        @id @default(uuid())
+  userId        String
+  bookId        String
+  status        ReadingStatus @default(NOT_STARTED)
+  currentPage   Int           @default(0)
+  totalPages    Int?
+  progressPercentage Float    @default(0)
+  startedAt     DateTime?
+  completedAt   DateTime?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  book Book @relation(fields: [bookId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, bookId])
+  @@map("reading_progress")
+}
+
+model Summary {
+  id        String   @id @default(uuid())
+  title     String
+  content   String
+  authorId  String
+  bookId    String
+  rating    Float    @default(0)
+  views     Int      @default(0)
+  isPublic  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  author   User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  book     Book      @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  comments Comment[]
+  likes    Like[]
+
+  @@map("summaries")
+}
+
+model Comment {
+  id        String   @id @default(uuid())
+  content   String
+  authorId  String
+  bookId    String?
+  summaryId String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  author  User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  book    Book?    @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  summary Summary? @relation(fields: [summaryId], references: [id], onDelete: Cascade)
+
+  @@map("comments")
+}
+
+model Like {
+  id        String   @id @default(uuid())
+  userId    String
+  bookId    String?
+  summaryId String?
+  createdAt DateTime @default(now())
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  book    Book?    @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  summary Summary? @relation(fields: [summaryId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, bookId])
+  @@unique([userId, summaryId])
+  @@map("likes")
+}
+
+model Follow {
+  id          String   @id @default(uuid())
+  followerId  String
+  followingId String
+  createdAt   DateTime @default(now())
+
+  follower  User @relation("UserFollowers", fields: [followerId], references: [id], onDelete: Cascade)
+  following User @relation("UserFollowing", fields: [followingId], references: [id], onDelete: Cascade)
+
+  @@unique([followerId, followingId])
+  @@map("follows")
+}
+
+model Achievement {
+  id          String @id @default(uuid())
+  name        String @unique
+  description String
+  icon        String?
+  pointsRequired Int
+  category    String // reading, social, summary, streak, etc.
+
+  users UserAchievement[]
+
+  @@map("achievements")
+}
+
+model UserAchievement {
+  id            String   @id @default(uuid())
+  userId        String
+  achievementId String
+  unlockedAt    DateTime @default(now())
+
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  achievement Achievement @relation(fields: [achievementId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, achievementId])
+  @@map("user_achievements")
+}
